@@ -1,0 +1,13 @@
+pii:
+  default_action: redact      # used for any type not listed below
+  actions:
+    AADHAAR: block
+    CREDIT_CARD: block
+    PAN: redact
+    EMAIL: redact
+    PHONE_IN: redact
+
+injection:
+  enabled: true
+  threshold: 5                # total rule score at or above this triggers the action
+  action: block 

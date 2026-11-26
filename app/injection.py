@@ -70,7 +70,7 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
-def check_injection(text: str) -> InjectionResult:
+def check_injection(text: str, threshold: int = THRESHOLD) -> InjectionResult:
     text = normalize(text)
     score = 0
     matched = []
@@ -78,4 +78,4 @@ def check_injection(text: str) -> InjectionResult:
         if pattern.search(text):
             score += weight
             matched.append(name)
-    return InjectionResult(score=score, matched=matched, is_injection=score >= THRESHOLD)
+    return InjectionResult(score=score, matched=matched, is_injection=score >= threshold)

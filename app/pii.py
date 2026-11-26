@@ -49,9 +49,13 @@ def detect_pii(text: str) -> list[Finding]:
     return sorted(kept, key=lambda f: f.start)
 
 
-def redact(text: str) -> tuple[str, list[Finding]]:
-    findings = detect_pii(text)
+def redact_findings(text: str, findings: list[Finding]) -> str:
     # Replace from the end so earlier positions stay valid
     for f in reversed(findings):
         text = text[: f.start] + f"[{f.type}]" + text[f.end :]
-    return text, findings
+    return text
+
+
+def redact(text: str) -> tuple[str, list[Finding]]:
+    findings = detect_pii(text)
+    return redact_findings(text, findings), findings
