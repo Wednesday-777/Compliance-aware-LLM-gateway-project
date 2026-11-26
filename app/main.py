@@ -1,3 +1,4 @@
+from app.pii import redact
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -22,6 +23,13 @@ def health():
 
 @app.post("/v1/chat")
 def chat(req: ChatRequest):
-    messages = [m.model_dump() for m in req.messages]
-    reply = ask_llm(messages)
-    return {"reply": reply}
+    clean_messages = []
+    pii_types = []
+
+    for m in req.messages:
+        clean_text, findings = redact(m.content)
+        pii_types.extend(f.type for f in findings)
+        clean_messages.append({"role": m.role, "content": clean_text})
+
+    reply = ask_llm(clean_messages)
+    return {"reply": reply, "pii_redacted": sorted(set(pii_types))}
