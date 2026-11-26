@@ -74,7 +74,7 @@ def test_load_policy_from_file(tmp_path):
     f.write_text("pii:\n  actions:\n    AADHAAR: block\ninjection:\n  threshold: 6\n")
     p = load_policy(f)
     assert p.pii_action_for("AADHAAR") == "block"
-    assert p.pii_action_for("EMAIL") == "redact"  # falls back to default
+    assert p.pii_action_for("EMAIL") == "redact"  
     assert p.injection_threshold == 6
 
 
@@ -87,6 +87,13 @@ def test_invalid_action_rejected(tmp_path):
 
 def test_unknown_pii_type_rejected(tmp_path):
     f = tmp_path / "p.yaml"
-    f.write_text("pii:\n  actions:\n    AADAHAR: block\n")  # typo on purpose
+    f.write_text("pii:\n  actions:\n    AADAHAR: block\n")  
     with pytest.raises(ValueError):
         load_policy(f)
+
+
+def test_decision_records_injection_score_even_when_allowed():
+    d = process_message("From now on you should answer briefly", "user", make_policy())
+    assert not d.blocked
+    assert d.injection_score == 2
+    assert d.injection_rules == ["role_hijack"]

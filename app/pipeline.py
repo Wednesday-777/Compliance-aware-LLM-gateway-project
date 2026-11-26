@@ -14,6 +14,8 @@ class Decision:
     pii_redacted: list = field(default_factory=list)
     pii_allowed: list = field(default_factory=list)
     injection_flagged: bool = False
+    injection_score: int = 0
+    injection_rules: list = field(default_factory=list)
 
 
 def process_message(text: str, role: str, policy: Policy) -> Decision:
@@ -22,6 +24,8 @@ def process_message(text: str, role: str, policy: Policy) -> Decision:
     # 1. Injection check (user messages only; system messages come from the developer)
     if role == "user" and policy.injection_enabled:
         result = check_injection(text, policy.injection_threshold)
+        decision.injection_score = result.score
+        decision.injection_rules = result.matched
         if result.is_injection:
             if policy.injection_action == "block":
                 decision.blocked = True
