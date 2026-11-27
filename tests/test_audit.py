@@ -1,6 +1,6 @@
 import sqlite3
 
-from app.audit import init_db, log_request, recent_entries, summary_stats
+from app.audit import init_db, log_request, recent_entries, summary_stats, SCHEMA
 
 
 def test_log_and_read_back(tmp_path):
@@ -44,3 +44,25 @@ def test_log_never_stores_message_content(tmp_path):
     conn.close()
     forbidden = {"content", "prompt", "text", "message", "messages", "reply"}
     assert columns.isdisjoint(forbidden)
+
+
+def test_client_is_recorded(tmp_path):
+    db = str(tmp_path / "t.db")
+    init_db(db)
+    log_request(outcome="allowed", client="demo-client", path=db)
+    assert recent_entries(1, path=db)[0]["client"] == "demo-client"
+
+
+def test_init_db_adds_client_column_to_old_database(tmp_path):
+    db = str(tmp_path / "old.db")
+    old_schema = SCHEMA.replace(",\n    client TEXT", "")
+    assert "client" not in old_schema  
+    conn = sqlite3.connect(db)
+    conn.execute(old_schema)
+    conn.commit()
+    conn.close()
+
+    init_db(db)  
+
+    log_request(outcome="allowed", client="x", path=db)
+    assert recent_entries(1, path=db)[0]["client"] == "x"

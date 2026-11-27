@@ -2,11 +2,13 @@ import logging
 import time
 from dataclasses import asdict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 from app import config
 from app.audit import init_db, log_request, recent_entries, summary_stats
+from app.auth import ApiKey, Auth, load_keys
 from app.llm_client import ask_llm
 from app.pipeline import process_message
 from app.policy import load_policy
@@ -16,6 +18,26 @@ logger = logging.getLogger("gateway")
 app = FastAPI(title="Compliance-Aware LLM Gateway")
 policy = load_policy()  # fails at startup if policy.yaml is invalid
 init_db()
+
+
+def _record_auth_event(outcome: str, client: str | None) -> None:
+    log_request(outcome=outcome, client=client)
+
+
+auth = Auth(load_keys(), on_event=_record_auth_event)  # fails if no valid keys
+bearer = HTTPBearer(auto_error=False)  # we send our own 401 so errors stay consistent
+
+
+def require_client(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+) -> ApiKey:
+    return auth.authenticate(credentials, roles={"client", "admin"}, rate_limited=True)
+
+
+def require_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+) -> ApiKey:
+    return auth.authenticate(credentials, roles={"admin"})
 
 
 class Message(BaseModel):
@@ -29,26 +51,26 @@ class ChatRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok"}  # stays open so hosting platforms can check it
 
 
 @app.get("/policy")
-def show_policy():
+def show_policy(_: ApiKey = Depends(require_admin)):
     return asdict(policy)
 
 
 @app.get("/audit/recent")
-def audit_recent(limit: int = 50):
+def audit_recent(limit: int = 50, _: ApiKey = Depends(require_admin)):
     return recent_entries(min(max(limit, 1), 200))
 
 
 @app.get("/audit/stats")
-def audit_stats():
+def audit_stats(_: ApiKey = Depends(require_admin)):
     return summary_stats()
 
 
 @app.post("/v1/chat")
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, key: ApiKey = Depends(require_client)):
     started = time.perf_counter()
     clean_messages = []
     redacted, allowed = set(), set()
@@ -61,6 +83,7 @@ def chat(req: ChatRequest):
         # Reads the variables above as they are now, so it logs the latest state
         return log_request(
             outcome=outcome,
+            client=key.name,
             message_count=len(req.messages),
             input_chars=input_chars,
             latency_ms=int((time.perf_counter() - started) * 1000),

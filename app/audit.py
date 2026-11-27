@@ -12,7 +12,7 @@ load_dotenv()
 
 logger = logging.getLogger("gateway.audit")
 
-# Relative paths resolve from the the project root
+
 DB_PATH = os.getenv("AUDIT_DB_PATH", "audit.db")
 
 SCHEMA = """
@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
     message_count INTEGER NOT NULL DEFAULT 0,
     input_chars INTEGER NOT NULL DEFAULT 0,
     latency_ms INTEGER NOT NULL DEFAULT 0,
-    model TEXT
+    model TEXT,
+    client TEXT
 )
 """
 
@@ -45,9 +46,12 @@ def _connect(path=None):
 
 
 def init_db(path=None) -> None:
-    # "with conn" commits the transaction; closing() releases the file
+    
     with closing(_connect(path)) as conn, conn:
         conn.execute(SCHEMA)
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(audit_log)")}
+        if "client" not in existing:  # migrate a database created before Phase 6
+            conn.execute("ALTER TABLE audit_log ADD COLUMN client TEXT")
 
 
 def log_request(
@@ -64,6 +68,7 @@ def log_request(
     input_chars: int = 0,
     latency_ms: int = 0,
     model: str | None = None,
+    client: str | None = None,
     path=None,
 ) -> str:
     """Record metadata about one request. Returns its request_id."""
@@ -73,8 +78,8 @@ def log_request(
             conn.execute(
                 "INSERT INTO audit_log (request_id, timestamp, outcome, block_reason, "
                 "pii_redacted, pii_allowed, pii_blocked, injection_score, injection_rules, "
-                "injection_flagged, message_count, input_chars, latency_ms, model) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "injection_flagged, message_count, input_chars, latency_ms, model, client) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     request_id,
                     datetime.now(timezone.utc).isoformat(),
@@ -90,10 +95,11 @@ def log_request(
                     input_chars,
                     latency_ms,
                     model,
+                    client,
                 ),
             )
     except sqlite3.Error:
-        # Design choice: a logging failure must not take the gateway down.
+        
         logger.exception("Failed to write audit log entry")
     return request_id
 
@@ -124,6 +130,12 @@ def summary_stats(path=None) -> dict:
             "SELECT block_reason, COUNT(*) FROM audit_log "
             "WHERE outcome = 'blocked' GROUP BY block_reason"
         ).fetchall()
+        outcomes = conn.execute(
+            "SELECT outcome, COUNT(*) FROM audit_log GROUP BY outcome"
+        ).fetchall()
+        clients = conn.execute(
+            "SELECT COALESCE(client, 'unknown'), COUNT(*) FROM audit_log GROUP BY client"
+        ).fetchall()
         pii_rows = conn.execute(
             "SELECT pii_redacted, pii_blocked FROM audit_log"
         ).fetchall()
@@ -138,5 +150,7 @@ def summary_stats(path=None) -> dict:
         "total_requests": total,
         "blocked": blocked,
         "block_reasons": {r[0]: r[1] for r in reasons},
+        "outcomes": {r[0]: r[1] for r in outcomes},
+        "by_client": {r[0]: r[1] for r in clients},
         "pii_counts": pii_counts,
     }

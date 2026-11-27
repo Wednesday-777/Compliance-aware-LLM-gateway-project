@@ -2,3 +2,5 @@ venv/
 .env
 __pycache__/
 *.db
+api_keys.yaml
+audit.db
