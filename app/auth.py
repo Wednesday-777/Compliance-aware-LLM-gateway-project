@@ -41,25 +41,33 @@ def hash_key(raw: str) -> str:
 def find_key(raw: str, keys: list[ApiKey]) -> ApiKey | None:
     presented = hash_key(raw)
     match = None
-    for k in keys:  # check every key; compare_digest avoids timing leaks
+    for k in keys:  
         if hmac.compare_digest(presented, k.key_hash):
             match = k
     return match
 
 
+def _read_raw(path: Path) -> dict:
+    """Keys come from the file if it exists, otherwise from GATEWAY_API_KEYS."""
+    if path.exists():
+        with open(path, encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    env_value = os.getenv("GATEWAY_API_KEYS")
+    if env_value:
+        return yaml.safe_load(env_value) or {}  
+    raise RuntimeError(
+        f"{path} not found and GATEWAY_API_KEYS is not set. "
+        "Create keys with: python -m scripts.create_key <name> <client|admin>"
+    )
+
+
 def load_keys(path=KEYS_PATH) -> list[ApiKey]:
     path = Path(path)
-    if not path.exists():
-        raise RuntimeError(
-            f"{path} not found. Create keys with: "
-            "python -m scripts.create_key <name> <client|admin>"
-        )
-    with open(path, encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
+    raw = _read_raw(path)
 
     entries = raw.get("keys") or []
     if not entries:
-        raise RuntimeError(f"{path} has no keys. The gateway refuses to start without any.")
+        raise RuntimeError("No API keys configured. The gateway refuses to start without any.")
 
     keys, names = [], set()
     for e in entries:

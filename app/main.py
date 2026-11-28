@@ -3,6 +3,7 @@ import time
 from dataclasses import asdict
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
@@ -13,11 +14,21 @@ from app.llm_client import ask_llm
 from app.pipeline import process_message
 from app.policy import load_policy
 
+
 logger = logging.getLogger("gateway")
 
 app = FastAPI(title="Compliance-Aware LLM Gateway")
 policy = load_policy()  # fails at startup if policy.yaml is invalid
 init_db()
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}  # stays open so hosting platforms can check it
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/docs")
 
 
 def _record_auth_event(outcome: str, client: str | None) -> None:

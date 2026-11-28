@@ -1,4 +1,5 @@
 import pytest
+import json
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
@@ -124,3 +125,19 @@ def test_load_keys_requires_at_least_one_key(tmp_path):
     f.write_text("keys: []\n")
     with pytest.raises(RuntimeError):
         load_keys(f)
+
+
+def test_load_keys_can_come_from_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv(
+        "GATEWAY_API_KEYS",
+        json.dumps({"keys": [{"name": "demo", "role": "client", "key_hash": GOOD_HASH}]}),
+    )
+    keys = load_keys(tmp_path / "missing.yaml")
+    assert keys[0].name == "demo"
+    assert keys[0].rate_limit_per_minute == 20  # default
+
+
+def test_load_keys_fails_when_no_file_and_no_env(tmp_path, monkeypatch):
+    monkeypatch.delenv("GATEWAY_API_KEYS", raising=False)
+    with pytest.raises(RuntimeError):
+        load_keys(tmp_path / "missing.yaml")
