@@ -4,3 +4,4 @@ __pycache__/
 *.db
 api_keys.yaml
 audit.db
+api_keys.prod.yaml
